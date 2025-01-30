@@ -92,14 +92,13 @@ def generate_responses(images: List[Image.Image], system_prompt: str, model, pro
         processed_info = [process_vision_info(msg) for msg in messages_batch]
         image_inputs = [info[0] for info in processed_info]
         video_inputs = [info[1] if info[1] is not None else [] for info in processed_info]
-        print(video_input)
+        print(video_inputs)
         if not any(image_inputs):
             raise HTTPException(status_code=400, detail="No valid images found for processing.")
         logger.info("Processng images by the autoprocessor")
         inputs = processor(
             text=text_batch,
             images=list(image_inputs),
-            videos=list(video_inputs),
             padding="longest",
             return_tensors="pt",
         ).to(DEVICE)
