@@ -7,6 +7,7 @@ from PIL import Image
 import asyncio
 from async_engine import AsyncEngine
 from utils import process_image_file, ImageAnalysisRequest, ImageAnalysisResponse, SYSTEM_PROMPT
+from contextlib import asynccontextmanager
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,14 +18,19 @@ MAX_IMAGE_SIZE = (1024, 1024)
 BATCH_SIZE = 5
 MAX_WAIT_TIME = 0.5
 
-    
-engine = AsyncEngine(model_name = MODEL_NAME,
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize engine
+    global engine
+    engine = AsyncEngine(model_name = MODEL_NAME,
                      system_prompt=SYSTEM_PROMPT, 
                      max_new_token=500,
                      batch_size=BATCH_SIZE, 
                      max_wait_time=MAX_WAIT_TIME)
+    yield
+    await engine.shutdown()
 
-app = FastAPI()
+app = FastAPI(lifespan = lifespan)
 
 @app.post("/analyze/", response_model=ImageAnalysisResponse)
 async def analyze_images(images: Union[List[UploadFile],UploadFile] = File(...)):
@@ -52,4 +58,4 @@ async def analyze_images(images: Union[List[UploadFile],UploadFile] = File(...))
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting server...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=5000)

@@ -1,0 +1,9 @@
+transformers
+fastapi
+qwen_vl_utils
+asyncio
+pydantic
+python-multipart
+uvicorn
+accelerate
+

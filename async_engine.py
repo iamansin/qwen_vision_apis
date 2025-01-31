@@ -21,9 +21,11 @@ class AsyncEngine:
         self.system_prompt = system_prompt
         self.max_new_token = max_new_token
         self.request_queue = asyncio.Queue()
+        self.shutdown_event = asyncio.Event()
+        self.background_task = None
         self.model , self.processor = self.load_model(model_name)
         self._start_background_loop()
-        
+       
        
     def load_model(self,model_name):
         try:
@@ -41,46 +43,45 @@ class AsyncEngine:
         
     def _start_background_loop(self):
         """Start the background inference loop."""
-        asyncio.create_task(self._batch_inference_loop())
+        self.background_task = asyncio.create_task(self._batch_inference_loop())
 
     async def _batch_inference_loop(self):
         """Continuously process incoming requests in batches."""
-        while True:
-            batch = []
-            start_time = time.time()
+        while not self.shutdown_event.is_set():
+              batch = []
+              start_time = time.time()
 
-            while len(batch) < self.batch_size:
-                try:
+              while len(batch) < self.batch_size:
+                  try:
                     # Try fetching from the queue with a timeout
-                    request = await asyncio.wait_for(self.request_queue.get(), timeout=0.09)
-                    batch.append(request)
-                except asyncio.TimeoutError:
+                      request = await asyncio.wait_for(self.request_queue.get(), timeout=0.09)
+                      batch.append(request)
+                  except asyncio.TimeoutError:
                     # If the queue is empty and we have pending requests, process them after max_wait_time
-                    if batch and (time.time() - start_time) >= self.max_wait_time:
-                        break
-                    continue  # Continue waiting for new requests
+                      if batch and (time.time() - start_time) >= self.max_wait_time:
+                          break
+                      continue  # Continue waiting for new requests
 
-            if not batch:
-                continue 
-            
-            if batch:
-                images = [img for req in batch for img in req[0]]
-                response_events = [req[1] for req in batch]
+              if not batch:
+                  continue
+ 
+              try:
+                if batch:
+                    images = [img for req in batch for img in req[1]]
+                    response_events = [req[2] for req in batch]
 
-                try:
                     responses = await asyncio.to_thread(self._run_inference, images)
-                    
-                except Exception as e:
-                    for response_event in response_events:
-                        response_event.set_exception(e)
-    
-                # Distribute responses back to respective requests
-                idx = 0
-                for i, (request_id, req_images, response_event) in enumerate(batch):
-                    num_images = len(req_images)
-                    result = {"request_id": request_id, "response": responses[idx:idx + num_images]}
-                    response_events[i].set_result(result)  # Send response directly
-                    idx += num_images
+                    # Distribute responses back to respective requests
+                    idx = 0
+                    for i, (request_id, req_images, response_event) in enumerate(batch):
+                        num_images = len(req_images)
+                        result = {"request_id": request_id, "response": responses[idx:idx + num_images]}
+                        response_events[i].set_result(result)  # Send response directly
+                        idx += num_images
+              except Exception as e:
+                for response_event in response_events:
+                    response_event.set_exception(e)
+
 
     @torch.inference_mode()
     def _run_inference(self, images: List[Image.Image]) -> List[str]:
@@ -128,3 +129,12 @@ class AsyncEngine:
         response_event = asyncio.get_running_loop().create_future()
         await self.request_queue.put((request_id, images, response_event))
         return await response_event  # Wait for batch inference completion and return result
+   
+    async def shutdown(self):
+        logger.info("Shutting down AsyncEngine...")
+        self.shutdown_event.set()
+        logger.info("Freeing Model Space")
+        del self.model  # Free model memory
+        del self.processor
+        torch.cuda.empty_cache()
+        logger.info("AsyncEngine shut down successfully.")

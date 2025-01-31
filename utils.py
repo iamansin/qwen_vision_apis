@@ -1,4 +1,5 @@
 from PIL import Image
+from datetime import time
 from textwrap import dedent
 from fastapi import  UploadFile, HTTPException
 from pydantic import BaseModel
@@ -20,8 +21,9 @@ class ImageAnalysisRequest(BaseModel):
    system_prompt: str = SYSTEM_PROMPT
 
 class ImageAnalysisResponse(BaseModel):
-    analyses: List[str]
-    
+    response: List[str] 
+    request_id : str
+    request_processing_time : time
     
 def resize_image(image: Image.Image, max_size: Tuple[int, int]) -> Image.Image:
     logger.info("Resizing the image")
