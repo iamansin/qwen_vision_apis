@@ -26,10 +26,9 @@ class ImageAnalysisRequest(BaseModel):
     system_prompt: str = SYSTEM_PROMPT
 
 class ImageAnalysisResponse(BaseModel):
-    response: List[str]
-    request_id: str
-    request_processing_time: time
-
+    analyses: List[str]
+    
+    
 def resize_image(image: Image.Image, max_size: Tuple[int, int]) -> Image.Image:
     logger.info("Resizing the image")
     if image.size[0] > max_size[0] or image.size[1] > max_size[1]:
