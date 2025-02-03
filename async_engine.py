@@ -6,81 +6,79 @@ from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 from PIL import Image
 from fastapi import HTTPException
-import logging 
-from typing_extensions import List
+import logging
+from typing_extensions import List, Union
+from faster_whisper import WhisperModel
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-class AsyncEngine:
+class AsyncEngine_Image:
     """Handles request batching and optimized batch inferencing."""
 
-    def __init__(self, model_name: str, system_prompt: str, max_new_token:int , batch_size: int, max_wait_time: float):
+    def __init__(self, model_name: str , system_prompt: str, max_new_token: int, batch_size: int, max_wait_time: float):
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
         self.system_prompt = system_prompt
         self.max_new_token = max_new_token
         self.request_queue = asyncio.Queue()
-        self.model , self.processor = self.load_model(model_name)
-        self._start_background_loop()
-        
-       
-    def load_model(self,model_name):
+        self.shutdown_event = asyncio.Event()
+        self.background_task = None
+        self.model, self.processor = self.load_model(model_name)
+        self._start_background_loops()
+
+    def load_model(self, model_name):
         try:
-            logger.info("Loading model and processor...")
-            model = Qwen2VLForConditionalGeneration.from_pretrained(
-                model_name, torch_dtype=torch.float16, device_map="auto"
-            ).eval()  
-            processor = AutoProcessor.from_pretrained(model_name)
-            logger.info("Model and processor loaded successfully.")
-            return model, processor
+                logger.info("Loading model and processor...")
+                model = Qwen2VLForConditionalGeneration.from_pretrained(
+                    model_name, torch_dtype=torch.float16, device_map="auto"
+                ).eval()
+                processor = AutoProcessor.from_pretrained(model_name)
+                logger.info("Model and processor loaded successfully.")
+                return model, processor
         except Exception as e:
-            logger.error(f"Error initializing model: {str(e)}")
-            torch.cuda.empty_cache() 
-            raise e
+                logger.error(f"Error initializing model: {str(e)}")
+                torch.cuda.empty_cache()
+                raise e
         
-    def _start_background_loop(self):
-        """Start the background inference loop."""
-        asyncio.create_task(self._batch_inference_loop())
+
+    def _start_background_loops(self):
+        """Start the background inference loops."""
+        self.background_task = asyncio.create_task(self._batch_inference_loop())
 
     async def _batch_inference_loop(self):
-        """Continuously process incoming requests in batches."""
-        while True:
+        """Continuously process incoming image requests in batches."""
+        while not self.shutdown_event.is_set():
             batch = []
             start_time = time.time()
 
             while len(batch) < self.batch_size:
                 try:
-                    # Try fetching from the queue with a timeout
                     request = await asyncio.wait_for(self.request_queue.get(), timeout=0.09)
                     batch.append(request)
                 except asyncio.TimeoutError:
-                    # If the queue is empty and we have pending requests, process them after max_wait_time
                     if batch and (time.time() - start_time) >= self.max_wait_time:
                         break
-                    continue  # Continue waiting for new requests
+                    continue
 
             if not batch:
-                continue 
-            
-            if batch:
-                images = [img for req in batch for img in req[0]]
-                response_events = [req[1] for req in batch]
+                continue
 
-                try:
-                    responses = await asyncio.to_thread(self._run_inference, images)
-                    
-                except Exception as e:
-                    for response_event in response_events:
-                        response_event.set_exception(e)
-    
-                # Distribute responses back to respective requests
+            try:
+                images = [img for req in batch for img in req[1]]
+                response_events = [req[2] for req in batch]
+
+                responses = await asyncio.to_thread(self._run_inference, images)
                 idx = 0
                 for i, (request_id, req_images, response_event) in enumerate(batch):
                     num_images = len(req_images)
                     result = {"request_id": request_id, "response": responses[idx:idx + num_images]}
-                    response_events[i].set_result(result)  # Send response directly
+                    response_events[i].set_result(result)
                     idx += num_images
+            except Exception as e:
+                for response_event in response_events:
+                    response_event.set_exception(e)
+                    
 
     @torch.inference_mode()
     def _run_inference(self, images: List[Image.Image]) -> List[str]:
@@ -92,7 +90,7 @@ class AsyncEngine:
                 [{"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": self.system_prompt}]}]
                 for img in images
             ]
-            
+
             logger.info("Applying chat_template for response generation")
             processed_info = list(map(process_vision_info, messages_batch))
             image_inputs = [info[0] for info in processed_info if info[0] is not None]
@@ -122,9 +120,124 @@ class AsyncEngine:
             logger.error(f"Generation error: {str(e)}")
             raise HTTPException(status_code=500, detail="Error generating responses")
 
+
     async def enqueue_request(self, images: List[Image.Image]):
-        """Queue a request and return results once processed."""
-        request_id = str(uuid.uuid4())  # Generate unique request ID
+        """Queue an image request and return results once processed."""
+        request_id = str(uuid.uuid4())
         response_event = asyncio.get_running_loop().create_future()
         await self.request_queue.put((request_id, images, response_event))
-        return await response_event  # Wait for batch inference completion and return result
+        return await response_event
+
+
+    async def shutdown(self):
+        logger.info("Shutting down AsyncEngine...")
+        self.shutdown_event.set()
+        logger.info("Freeing Model Space")
+        del self.model
+        del self.processor
+        del self.whisper_client
+        torch.cuda.empty_cache()
+        logger.info("AsyncEngine shut down successfully.")
+        
+        
+class AsyncEngine_Audio:
+    """Handles request batching and optimized batch inferencing."""
+
+    def __init__(self, max_new_token: int, batch_size: int, max_wait_time: float, whisper_model_path: str):
+        self.batch_size = batch_size
+        self.max_wait_time = max_wait_time
+        self.max_new_token = max_new_token
+        self.audio_request_queue = asyncio.Queue()
+        self.shutdown_event = asyncio.Event()
+        self.audio_background_task = None
+        self.whisper_client = self.load_whisper_model(whisper_model_path)
+        self._start_background_loops()
+        
+        
+    def load_whisper_model(self, model_path):
+        try:
+            logger.info("Loading Whisper model...")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            whisper_client = WhisperModel(
+                model_path,
+                device=device,
+                compute_type="float16"
+            )
+            logger.info("Whisper model loaded successfully.")
+            return whisper_client
+        except Exception as e:
+            logger.error(f"Error initializing Whisper model: {str(e)}")
+            raise e
+        
+    def _start_background_loops(self):
+        """Start the background inference loops."""
+        self.audio_background_task = asyncio.create_task(self._audio_batch_inference_loop())
+        
+    async def _audio_batch_inference_loop(self):
+        """Continuously process incoming audio requests in batches."""
+        while not self.shutdown_event.is_set():
+            batch = []
+            start_time = time.time()
+
+            while len(batch) < self.batch_size:
+                try:
+                    request = await asyncio.wait_for(self.audio_request_queue.get(), timeout=0.09)
+                    batch.append(request)
+                except asyncio.TimeoutError:
+                    if batch and (time.time() - start_time) >= self.max_wait_time:
+                        break
+                    continue
+
+            if not batch:
+                continue
+
+            try:
+                audio_files = [req[1] for req in batch]
+                response_events = [req[2] for req in batch]
+
+                responses = await asyncio.to_thread(self._run_audio_inference, audio_files)
+                for i, (request_id, _, response_event) in enumerate(batch):
+                    result = {"request_id": request_id, "response": responses[i]}
+                    response_events[i].set_result(result)
+            except Exception as e:
+                for response_event in response_events:
+                    response_event.set_exception(e)
+                    
+    @torch.inference_mode()
+    def _run_audio_inference(self, audio_files: List[str]) -> List[str]:
+        try:
+            start_transcription_time = time.time()
+            logger.info("Processing batch of %d audio files", len(audio_files))
+
+            transcriptions = []
+            for audio_file in audio_files:
+                segments, info = self.whisper_client.transcribe(
+                    audio_file,
+                    language="en",
+                    task="translate",
+                    beam_size=1
+                )
+                transcription = " ".join([segment.text for segment in segments]).strip()
+                transcriptions.append(transcription)
+
+            logger.info("Batch processed in %.2f seconds", time.time() - start_transcription_time)
+            return transcriptions
+
+        except Exception as e:
+            logger.error(f"Transcription error: {str(e)}")
+            raise HTTPException(status_code=500, detail="Error transcribing audio")
+        
+    async def enqueue_audio_request(self, audio_file: str):
+        """Queue an audio request and return results once processed."""
+        request_id = str(uuid.uuid4())
+        response_event = asyncio.get_running_loop().create_future()
+        await self.audio_request_queue.put((request_id, audio_file, response_event))
+        return await response_event
+    
+    async def shutdown(self):
+        logger.info("Shutting down AsyncEngine...")
+        self.shutdown_event.set()
+        logger.info("Freeing Model Space")
+        del self.whisper_client
+        torch.cuda.empty_cache()
+        logger.info("AsyncEngine shut down successfully.")
