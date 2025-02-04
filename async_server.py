@@ -9,8 +9,6 @@ from async_engine import AsyncEngine_Audio, AsyncEngine_Image
 from utils import process_image_file, ImageAnalysisRequest, ImageAnalysisResponse, SYSTEM_PROMPT, process_audio_file
 from contextlib import asynccontextmanager
 from utils import download_s3_folder
-import concurrent.futures
-import numpy as np
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -67,33 +65,11 @@ async def analyze_images(request: Request , images: Union[List[UploadFile], Uplo
 
 @app.post("/stt_endpoint")
 async def voice_prescription(request: Request, file: UploadFile = File(...)):
-    """Optimized audio processing endpoint."""
+    """Asynchronously process audio file and return transcription."""
     try:
-        # Add performance monitoring
-        start_time = time.time()
-        
-        # Process audio file
         filepath = await process_audio_file(file)
-        
-        # Get transcription
         response = await request.app.state.audio_engine.enqueue_audio_request(filepath)
-        
-        # Clean up temporary file
-        try:
-            os.remove(filepath)
-        except Exception as e:
-            logger.warning(f"Error removing temporary file {filepath}: {e}")
-        
-        # Log performance metrics
-        processing_time = time.time() - start_time
-        logger.info(f"Request processed in {processing_time:.2f} seconds")
-        
-        return {
-            "transcription": response.get("response"),
-            "request_id": response.get("request_id"),
-            "processing_time": processing_time
-        }
-        
+        return {"transcription": response.get("response"), "request_id": response.get("request_id")}
     except HTTPException as he:
         logger.error(f"HTTP error: {he.detail}")
         raise
