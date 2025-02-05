@@ -162,13 +162,13 @@ class AsyncEngine_Audio:
                 model_path,
                 device=device,
                 compute_type="float16",
-                cpu_threads=8,  # Increase CPU threads for parallel processing
-                num_workers=2,  # Workers for data loading
-                download_root=None,  # Disable downloading, using local model
-                local_files_only=True,  # Only use local files
-                # GPU optimization parameters
-                gpu_thread_count=4
+                inter_threads=2,  # Number of threads for parallel processing
+                intra_threads=8,  # Number of threads within each operation
+                max_queued_batches=4,  # Maximum number of batches to queue
+                flash_attention=True  # Enable flash attention if available
             )
+
+
             logger.info("Whisper model loaded successfully.")
             return whisper_client
         except Exception as e:
