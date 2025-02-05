@@ -303,7 +303,8 @@ class AsyncEngine_Audio:
                 compute_type="float16",
                 download_root=None,
                 local_files_only=False,
-                cpu_threads=0
+                cpu_threads=0,
+                num_workers=2
             )
             logger.info("Whisper model loaded successfully.")
             return whisper_client
@@ -364,7 +365,7 @@ class AsyncEngine_Audio:
             # Create a temporary file with the correct extension
             with tempfile.NamedTemporaryFile(suffix=file_extension, delete=True) as temp_file:
                 torchaudio.save(temp_file.name, waveform, sample_rate)
-                segments, _ = self.whisper_client.transcribe(temp_file.name, language="en", task="translate",beam_size=1)
+                segments, _ = self.whisper_client.transcribe(temp_file.name, language="en", task="translate",beam_size=1,vad_filter=True)
             # with tempfile.NamedTemporaryFile(suffix=file_extension, delete=True) as temp_file:
             #     # Write audio data to temporary file
             #     temp_file.write(audio_data)
