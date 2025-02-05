@@ -161,7 +161,11 @@ class AsyncEngine_Audio:
             whisper_client = WhisperModel(
                 model_path,
                 device=device,
-                compute_type="float16",  # Maximum number of batches to queue
+                compute_type="float16",
+                download_root=None,
+                local_files_only=False,
+                cpu_threads=0
+                # Maximum number of batches to queue
             )
 
 
