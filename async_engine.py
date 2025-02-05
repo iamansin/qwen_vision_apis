@@ -360,16 +360,14 @@ class AsyncEngine_Audio:
                 optimal_gpu_batch_size = 1
 
             whisper_client = WhisperModel(
-                model_path,
-                device=device,
-                compute_type="float16",  # Use half precision for better memory efficiency
-                download_root=None,
-                local_files_only=False,
-                cpu_threads=8,  # Optimize CPU thread usage
-                num_workers=4,  # Worker threads for data loading
-                # GPU optimization parameters
-                beam_size=1,  # Reduced beam size for faster inference
-            )
+                 model_path,
+                 device=device,
+                 compute_type="float16",
+                 download_root=None,
+                 local_files_only=False,
+                 cpu_threads=0
+                 # Maximum number of batches to queue
+             )
 
             logger.info("Whisper model loaded successfully with optimized settings")
             return whisper_client
@@ -552,11 +550,7 @@ class AsyncEngine_Audio:
                     language="en",
                     task="translate",
                     #batch_size=self.batch_size,
-                    vad_filter=True,
-                    vad_parameters={
-                        "min_silence_duration_ms": 500,
-                        "speech_pad_ms": 400
-                    }
+                    vad_filter=True
                 )
                 results.append(" ".join([segment.text for segment in segments]).strip())
             except Exception as e:
