@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    await asyncio.gather[app.state.audio_engine.shutdown(), app.state.image_engine.shutdown()]
+    await asyncio.gather(app.state.audio_engine.shutdown(), app.state.image_engine.shutdown())
 
 app = FastAPI(lifespan=lifespan)
 
