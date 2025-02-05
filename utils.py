@@ -47,18 +47,15 @@ async def process_image_file(file: UploadFile, max_image_size) -> Image.Image:
         raise HTTPException(status_code=400, detail="Invalid image file")
 
 async def process_audio_file(file: UploadFile) -> str:
-    """Asynchronously process and save the uploaded audio file."""
+    """Process audio file and save to temporary location."""
     if not file.filename:
-        raise HTTPException(
-            status_code=400,
-            detail="No audio file detected"
-        )
+        raise HTTPException(status_code=400, detail="No audio file detected")
 
-    upload_dir = os.path.join(os.getcwd(), "static", "uploaded_audios")
-    os.makedirs(upload_dir, exist_ok=True)
+    temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
+    os.makedirs(temp_dir, exist_ok=True)
 
     unique_filename = f"{uuid.uuid4()}_{file.filename}"
-    filepath = os.path.join(upload_dir, unique_filename)
+    filepath = os.path.join(temp_dir, unique_filename)
 
     try:
         content = await file.read()
