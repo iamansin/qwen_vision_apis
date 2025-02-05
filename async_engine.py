@@ -161,10 +161,7 @@ class AsyncEngine_Audio:
             whisper_client = WhisperModel(
                 model_path,
                 device=device,
-                compute_type="float16",
-                inter_threads=2,  # Number of threads for parallel processing
-                intra_threads=8,  # Number of threads within each operation
-                max_queued_batches=4,  # Maximum number of batches to queue
+                compute_type="float16",  # Maximum number of batches to queue
                 flash_attention=True  # Enable flash attention if available
             )
 
