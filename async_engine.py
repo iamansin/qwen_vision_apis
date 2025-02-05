@@ -162,7 +162,6 @@ class AsyncEngine_Audio:
                 model_path,
                 device=device,
                 compute_type="float16",  # Maximum number of batches to queue
-                flash_attention=True  # Enable flash attention if available
             )
 
 
