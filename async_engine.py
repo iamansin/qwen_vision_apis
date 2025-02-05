@@ -303,8 +303,8 @@ class AsyncEngine_Audio:
                 compute_type="float16",
                 download_root=None,
                 local_files_only=False,
-                cpu_threads=0,
-                num_workers=2
+                cpu_threads=8,
+                num_workers=2,
             )
             logger.info("Whisper model loaded successfully.")
             return whisper_client
