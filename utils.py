@@ -11,7 +11,6 @@ import uuid
 import boto3
 from dotenv import load_dotenv
 import logging
-from pydub import AudioSegment
 import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,56 +46,25 @@ async def process_image_file(file: UploadFile, max_image_size) -> Image.Image:
         logger.error(f"Error processing image: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid image file")
 
-# async def process_audio_file(file: UploadFile) -> str:
-#     """Process audio file and save to temporary location."""
-#     if not file.filename:
-#         raise HTTPException(status_code=400, detail="No audio file detected")
-#
-#     temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
-#     os.makedirs(temp_dir, exist_ok=True)
-#
-#     unique_filename = f"{uuid.uuid4()}_{file.filename}"
-#     filepath = os.path.join(temp_dir, unique_filename)
-#
-#     try:
-#         content = await file.read()
-#         with open(filepath, "wb") as buffer:
-#             buffer.write(content)
-#         return filepath
-#     except Exception as e:
-#         logger.error(f"Error processing audio file: {str(e)}")
-#         raise HTTPException(status_code=400, detail="Error processing audio file")
-async def process_audio_file(file: UploadFile) -> tuple:
-    """
-    Process audio file directly in memory for Faster Whisper inference.
-    Returns a tuple of (audio_array, sample_rate).
-    """
+async def process_audio_file(file: UploadFile) -> str:
+    """Process audio file and save to temporary location."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No audio file detected")
 
+    temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    filepath = os.path.join(temp_dir, unique_filename)
+
     try:
-        # Read the file content into memory
         content = await file.read()
-        audio_bytes = io.BytesIO(content)
-
-        # Load audio with pydub (automatically detects format)
-        audio = AudioSegment.from_file(audio_bytes)
-
-        # Convert to mono if stereo
-        if audio.channels > 1:
-            audio = audio.set_channels(1)
-
-        # Convert to numpy array
-        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
-
-        # Normalize to float32 range [-1, 1]
-        samples = samples / (1 << (audio.sample_width * 8 - 1))
-
-        return samples, audio.frame_rate
-
+        with open(filepath, "wb") as buffer:
+            buffer.write(content)
+        return filepath
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Error processing audio file: {str(e)}")
+        raise HTTPException(status_code=400, detail="Error processing audio file")
 def load_aws_credentials():
     """
     Load AWS credentials from environment variables

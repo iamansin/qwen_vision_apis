@@ -245,12 +245,11 @@ class AsyncEngine_Audio:
                 except Exception as e:
                     logger.error(f"Error removing temporary file {audio_file}: {str(e)}")
 
-    def _run_single_audio_inference(self, audio_data: tuple) -> str:
+    def _run_single_audio_inference(self, audio_file: str) -> str:
         """Run inference on a single audio file."""
         try:
-            audio_array, sample_rate = audio_data
             segments, info = self.whisper_client.transcribe(
-                audio_array,
+                audio_file,
                 language="en",
                 task="translate",
                 beam_size=1,
