@@ -39,7 +39,8 @@ class AsyncEngine_Image:
                 logger.info(f"Allocating {max_memory_GB}GB to Qwen Vision Model... ")
                 logger.info("Loading model and processor...")
                 model = Qwen2VLForConditionalGeneration.from_pretrained(
-                    model_name, torch_dtype=torch.float16, device_map="auto", max_memory = max_memory,
+                    model_name, torch_dtype=torch.float16, device_map="auto",
+                    max_memory = max_memory,
                 ).eval()
                 processor = AutoProcessor.from_pretrained(model_name)
                 logger.info("Model and processor loaded successfully.")
