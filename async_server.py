@@ -67,8 +67,8 @@ async def analyze_images(request: Request , images: Union[List[UploadFile], Uplo
 async def voice_prescription(request: Request, file: UploadFile = File(...)):
     """Asynchronously process audio file and return transcription."""
     try:
-        filepath = await process_audio_file(file)
-        response = await request.app.state.audio_engine.enqueue_audio_request(filepath)
+        audio_data = await process_audio_file(file)
+        response = await request.app.state.audio_engine.enqueue_audio_request(audio_data)
         return {"transcription": response.get("response"), "request_id": response.get("request_id")}
     except HTTPException as he:
         logger.error(f"HTTP error: {he.detail}")

@@ -11,7 +11,8 @@ import uuid
 import boto3
 from dotenv import load_dotenv
 import logging
-
+import soundfile as sf
+import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -46,22 +47,51 @@ async def process_image_file(file: UploadFile, max_image_size) -> Image.Image:
         logger.error(f"Error processing image: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid image file")
 
-async def process_audio_file(file: UploadFile) -> str:
-    """Process audio file and save to temporary location."""
+# async def process_audio_file(file: UploadFile) -> str:
+#     """Process audio file and save to temporary location."""
+#     if not file.filename:
+#         raise HTTPException(status_code=400, detail="No audio file detected")
+#
+#     temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
+#     os.makedirs(temp_dir, exist_ok=True)
+#
+#     unique_filename = f"{uuid.uuid4()}_{file.filename}"
+#     filepath = os.path.join(temp_dir, unique_filename)
+#
+#     try:
+#         content = await file.read()
+#         with open(filepath, "wb") as buffer:
+#             buffer.write(content)
+#         return filepath
+#     except Exception as e:
+#         logger.error(f"Error processing audio file: {str(e)}")
+#         raise HTTPException(status_code=400, detail="Error processing audio file")
+async def process_audio_file(file: UploadFile) -> tuple:
+    """
+    Process audio file directly in memory for Faster Whisper inference.
+    Returns a tuple of (audio_array, sample_rate).
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No audio file detected")
 
-    temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
-    os.makedirs(temp_dir, exist_ok=True)
-
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
-    filepath = os.path.join(temp_dir, unique_filename)
-
     try:
+        # Read the file content into memory
         content = await file.read()
-        with open(filepath, "wb") as buffer:
-            buffer.write(content)
-        return filepath
+        audio_bytes = io.BytesIO(content)
+
+        # Load audio directly into memory using soundfile
+        audio_array, sample_rate = sf.read(audio_bytes)
+
+        # Convert to mono if stereo
+        if len(audio_array.shape) > 1:
+            audio_array = audio_array.mean(axis=1)
+
+        # Convert to float32 if needed
+        if audio_array.dtype != np.float32:
+            audio_array = audio_array.astype(np.float32)
+
+        return audio_array, sample_rate
+
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
         raise HTTPException(status_code=400, detail="Error processing audio file")
