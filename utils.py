@@ -11,7 +11,7 @@ import uuid
 import boto3
 from dotenv import load_dotenv
 import logging
-import soundfile as sf
+from pydub import AudioSegment
 import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,23 +79,24 @@ async def process_audio_file(file: UploadFile) -> tuple:
         content = await file.read()
         audio_bytes = io.BytesIO(content)
 
-        # Load audio directly into memory using soundfile
-        audio_array, sample_rate = sf.read(audio_bytes)
+        # Load audio with pydub (automatically detects format)
+        audio = AudioSegment.from_file(audio_bytes)
 
         # Convert to mono if stereo
-        if len(audio_array.shape) > 1:
-            audio_array = audio_array.mean(axis=1)
+        if audio.channels > 1:
+            audio = audio.set_channels(1)
 
-        # Convert to float32 if needed
-        if audio_array.dtype != np.float32:
-            audio_array = audio_array.astype(np.float32)
+        # Convert to numpy array
+        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
 
-        return audio_array, sample_rate
+        # Normalize to float32 range [-1, 1]
+        samples = samples / (1 << (audio.sample_width * 8 - 1))
+
+        return samples, audio.frame_rate
 
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
-        raise HTTPException(status_code=400, detail="Error processing audio file")
-
+        raise HTTPException(status_code=400, detail=f"Error processing audio file: {str(e)}")
 def load_aws_credentials():
     """
     Load AWS credentials from environment variables
