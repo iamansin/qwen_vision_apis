@@ -11,6 +11,8 @@ from typing_extensions import List, Union
 from faster_whisper import WhisperModel
 import os
 import tempfile
+from utils import process_audio_stream
+import torchaudio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -358,19 +360,23 @@ class AsyncEngine_Audio:
 
     def _run_single_audio_inference(self, audio_data: bytes, file_extension: str) -> str:
         try:
+            waveform, sample_rate = process_audio_stream(audio_data)
             # Create a temporary file with the correct extension
             with tempfile.NamedTemporaryFile(suffix=file_extension, delete=True) as temp_file:
-                # Write audio data to temporary file
-                temp_file.write(audio_data)
-                temp_file.flush()
-
-                # Process with Whisper
-                segments, info = self.whisper_client.transcribe(
-                    temp_file.name,
-                    language="en",
-                    task="translate",
-                    beam_size=1
-                )
+                torchaudio.save(temp_file.name, waveform, sample_rate)
+                segments, _ = self.whisper_client.transcribe(temp_file.name, language="en", task="translate",beam_size=1)
+            # with tempfile.NamedTemporaryFile(suffix=file_extension, delete=True) as temp_file:
+            #     # Write audio data to temporary file
+            #     temp_file.write(audio_data)
+            #     temp_file.flush()
+            #
+            #     # Process with Whisper
+            #     segments, info = self.whisper_client.transcribe(
+            #         temp_file.name,
+            #         language="en",
+            #         task="translate",
+            #         beam_size=1
+            #     )
 
             return " ".join([segment.text for segment in segments]).strip()
 

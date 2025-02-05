@@ -12,6 +12,9 @@ import boto3
 from dotenv import load_dotenv
 import logging
 import numpy as np
+import torchaudio
+from io import BytesIO
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -77,7 +80,10 @@ async def process_audio_data(file: UploadFile) -> tuple[bytes, str]:
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
         raise HTTPException(status_code=400, detail="Error processing audio file")
-
+def process_audio_stream(audio_bytes):
+    """Convert raw audio bytes into a waveform and sample rate."""
+    waveform, sample_rate = torchaudio.load(BytesIO(audio_bytes))
+    return waveform, sample_rate
 
 def load_aws_credentials():
     """
