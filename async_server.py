@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     
     app.state.audio_engine = AsyncEngine_Audio(
                          max_new_token=500,
-                         batch_size=3,
+                         batch_size=8,
                          max_wait_time=0.3,
                          whisper_model_path=WHISPER_MODEL_PATH
                          )
