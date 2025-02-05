@@ -368,7 +368,6 @@ class AsyncEngine_Audio:
                 cpu_threads=8,  # Optimize CPU thread usage
                 num_workers=4,  # Worker threads for data loading
                 # GPU optimization parameters
-                gpu_batch_size=optimal_gpu_batch_size,
                 beam_size=1,  # Reduced beam size for faster inference
             )
 
