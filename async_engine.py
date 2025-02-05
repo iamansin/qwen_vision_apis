@@ -16,11 +16,12 @@ logger = logging.getLogger(__name__)
 class AsyncEngine_Image:
     """Handles request batching and optimized batch inferencing."""
 
-    def __init__(self, model_name: str , system_prompt: str, max_new_token: int, batch_size: int, max_wait_time: float):
+    def __init__(self, model_name: str , system_prompt: str, max_new_token: int, batch_size: int, max_wait_time: float, gpu_utilization : float =0.6):
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
         self.system_prompt = system_prompt
         self.max_new_token = max_new_token
+        self.gpu_utilization = gpu_utilization
         self.request_queue = asyncio.Queue()
         self.shutdown_event = asyncio.Event()
         self.background_task = None
@@ -28,13 +29,22 @@ class AsyncEngine_Image:
         self._start_background_loops()
 
     def load_model(self, model_name):
-        try:
+        try:    
+                _ , total_mem = torch.cuda.mem_get_info()
+                total_mem_GB = total_mem / (1024 ** 3)  
+
+                max_memory_GB = int(total_mem_GB * self.gpu_utilization)  
+                max_memory = {0: f"{max_memory_GB}GB"}
+                logger.info(f"Allocating {max_memory_GB}GB to Qwen Vision Model... ")
                 logger.info("Loading model and processor...")
                 model = Qwen2VLForConditionalGeneration.from_pretrained(
-                    model_name, torch_dtype=torch.float16, device_map="auto"
+                    model_name, torch_dtype=torch.float16, device_map="auto",
+                    max_memory = { 0 : max_memory}
                 ).eval()
                 processor = AutoProcessor.from_pretrained(model_name)
                 logger.info("Model and processor loaded successfully.")
+                available_mem, _ = torch.cuda.mem_get_info()
+                logger.info(f"Memory available after loading the model {int(available_mem / (1024 ** 3))}")
                 return model, processor
         except Exception as e:
                 logger.error(f"Error initializing model: {str(e)}")
