@@ -288,7 +288,6 @@ class AsyncEngine_Audio:
         self.audio_request_queue = asyncio.Queue()
         self.shutdown_event = asyncio.Event()
         self.audio_background_task = None
-        self.processing_semaphore = asyncio.Semaphore(10)
         self.whisper_client = self.load_whisper_model(whisper_model_path)
         self._start_background_loops()
 
@@ -347,7 +346,6 @@ class AsyncEngine_Audio:
                         response_event.set_exception(e)
 
     async def _process_single_audio(self, request_id: str, audio_data: bytes, file_extension: str, response_event):
-        async with self.processing_semaphore:
             try:
                 response = await asyncio.to_thread(
                     self._run_single_audio_inference, audio_data, file_extension
