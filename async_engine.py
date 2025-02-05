@@ -9,6 +9,7 @@ from fastapi import HTTPException
 import logging
 from typing_extensions import List, Union
 from faster_whisper import WhisperModel
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -135,13 +136,12 @@ class AsyncEngine_Image:
         logger.info("Freeing Model Space")
         del self.model
         del self.processor
-        del self.whisper_client
         torch.cuda.empty_cache()
         logger.info("AsyncEngine shut down successfully.")
-        
-        
+
+
 class AsyncEngine_Audio:
-    """Handles request batching and optimized batch inferencing."""
+    """Handles request batching and optimized batch inferencing for audio."""
 
     def __init__(self, max_new_token: int, batch_size: int, max_wait_time: float, whisper_model_path: str):
         self.batch_size = batch_size
@@ -150,10 +150,10 @@ class AsyncEngine_Audio:
         self.audio_request_queue = asyncio.Queue()
         self.shutdown_event = asyncio.Event()
         self.audio_background_task = None
+        self.processing_semaphore = asyncio.Semaphore(10)  # Limit concurrent processing
         self.whisper_client = self.load_whisper_model(whisper_model_path)
         self._start_background_loops()
-        
-        
+
     def load_whisper_model(self, model_path):
         try:
             logger.info("Loading Whisper model...")
@@ -161,24 +161,31 @@ class AsyncEngine_Audio:
             whisper_client = WhisperModel(
                 model_path,
                 device=device,
-                compute_type="float16"
+                compute_type="float16",
+                cpu_threads=8,  # Increase CPU threads for parallel processing
+                num_workers=2,  # Workers for data loading
+                download_root=None,  # Disable downloading, using local model
+                local_files_only=True,  # Only use local files
+                # GPU optimization parameters
+                gpu_thread_count=4
             )
             logger.info("Whisper model loaded successfully.")
             return whisper_client
         except Exception as e:
             logger.error(f"Error initializing Whisper model: {str(e)}")
             raise e
-        
+
     def _start_background_loops(self):
         """Start the background inference loops."""
         self.audio_background_task = asyncio.create_task(self._audio_batch_inference_loop())
-        
+
     async def _audio_batch_inference_loop(self):
         """Continuously process incoming audio requests in batches."""
         while not self.shutdown_event.is_set():
             batch = []
             start_time = time.time()
 
+            # Collect batch
             while len(batch) < self.batch_size:
                 try:
                     request = await asyncio.wait_for(self.audio_request_queue.get(), timeout=0.09)
@@ -191,52 +198,71 @@ class AsyncEngine_Audio:
             if not batch:
                 continue
 
+            # Process batch in parallel
             try:
-                audio_files = [req[1] for req in batch]
-                response_events = [req[2] for req in batch]
+                tasks = []
+                for request_id, audio_file, response_event in batch:
+                    task = asyncio.create_task(self._process_single_audio(
+                        request_id, audio_file, response_event
+                    ))
+                    tasks.append(task)
 
-                responses = await asyncio.to_thread(self._run_audio_inference, audio_files)
-                for i, (request_id, _, response_event) in enumerate(batch):
-                    result = {"request_id": request_id, "response": responses[i]}
-                    response_events[i].set_result(result)
+                await asyncio.gather(*tasks)
+
             except Exception as e:
-                for response_event in response_events:
-                    response_event.set_exception(e)
-                    
-    @torch.inference_mode()
-    def _run_audio_inference(self, audio_files: List[str]) -> List[str]:
-        try:
-            start_transcription_time = time.time()
-            logger.info("Processing batch of %d audio files", len(audio_files))
+                logger.error(f"Batch processing error: {str(e)}")
+                for _, _, response_event in batch:
+                    if not response_event.done():
+                        response_event.set_exception(e)
 
-            transcriptions = []
-            for audio_file in audio_files:
-                segments, info = self.whisper_client.transcribe(
-                    audio_file,
-                    language="en",
-                    task="translate",
-                    beam_size=1
+    async def _process_single_audio(self, request_id: str, audio_file: str, response_event):
+        """Process a single audio file with semaphore limiting."""
+        async with self.processing_semaphore:
+            try:
+                response = await asyncio.to_thread(
+                    self._run_single_audio_inference, audio_file
                 )
-                transcription = " ".join([segment.text for segment in segments]).strip()
-                transcriptions.append(transcription)
+                result = {"request_id": request_id, "response": response}
+                response_event.set_result(result)
+            except Exception as e:
+                logger.error(f"Error processing audio {request_id}: {str(e)}")
+                response_event.set_exception(e)
+            finally:
+                # Cleanup temporary audio file
+                try:
+                    if os.path.exists(audio_file):
+                        os.remove(audio_file)
+                except Exception as e:
+                    logger.error(f"Error removing temporary file {audio_file}: {str(e)}")
 
-            logger.info("Batch processed in %.2f seconds", time.time() - start_transcription_time)
-            return transcriptions
+    def _run_single_audio_inference(self, audio_file: str) -> str:
+        """Run inference on a single audio file."""
+        try:
+            segments, info = self.whisper_client.transcribe(
+                audio_file,
+                language="en",
+                task="translate",
+                beam_size=1,
 
+            )
+            return " ".join([segment.text for segment in segments]).strip()
         except Exception as e:
             logger.error(f"Transcription error: {str(e)}")
             raise HTTPException(status_code=500, detail="Error transcribing audio")
-        
+
     async def enqueue_audio_request(self, audio_file: str):
         """Queue an audio request and return results once processed."""
         request_id = str(uuid.uuid4())
         response_event = asyncio.get_running_loop().create_future()
         await self.audio_request_queue.put((request_id, audio_file, response_event))
         return await response_event
-    
+
     async def shutdown(self):
+        """Shutdown the engine and clean up resources."""
         logger.info("Shutting down AsyncEngine...")
         self.shutdown_event.set()
+        if self.audio_background_task:
+            await self.audio_background_task
         logger.info("Freeing Model Space")
         del self.whisper_client
         torch.cuda.empty_cache()
