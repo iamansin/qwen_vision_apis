@@ -6,10 +6,8 @@ pydantic
 python-multipart
 uvicorn
 accelerate
-<<<<<<< HEAD
 faster-whisper
 python-dotenv
 boto3
-=======
->>>>>>> 1e885da0a8fca1ad57925ee01c20b961594e35c8
+
 

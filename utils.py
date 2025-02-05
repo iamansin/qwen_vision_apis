@@ -46,25 +46,39 @@ async def process_image_file(file: UploadFile, max_image_size) -> Image.Image:
         logger.error(f"Error processing image: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid image file")
 
-async def process_audio_file(file: UploadFile) -> str:
-    """Process audio file and save to temporary location."""
+# async def process_audio_file(file: UploadFile) -> str:
+#     """Process audio file and save to temporary location."""
+#     if not file.filename:
+#         raise HTTPException(status_code=400, detail="No audio file detected")
+#
+#     temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
+#     os.makedirs(temp_dir, exist_ok=True)
+#
+#     unique_filename = f"{uuid.uuid4()}_{file.filename}"
+#     filepath = os.path.join(temp_dir, unique_filename)
+#
+#     try:
+#         content = await file.read()
+#         with open(filepath, "wb") as buffer:
+#             buffer.write(content)
+#         return filepath
+#     except Exception as e:
+#         logger.error(f"Error processing audio file: {str(e)}")
+#         raise HTTPException(status_code=400, detail="Error processing audio file")
+async def process_audio_data(file: UploadFile) -> tuple[bytes, str]:
+    """Process audio file in memory and return data and extension."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No audio file detected")
 
-    temp_dir = os.path.join(os.getcwd(), "static", "temp_audio")
-    os.makedirs(temp_dir, exist_ok=True)
-
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
-    filepath = os.path.join(temp_dir, unique_filename)
-
     try:
+        file_extension = os.path.splitext(file.filename)[1].lower()
         content = await file.read()
-        with open(filepath, "wb") as buffer:
-            buffer.write(content)
-        return filepath
+        return content, file_extension
     except Exception as e:
         logger.error(f"Error processing audio file: {str(e)}")
         raise HTTPException(status_code=400, detail="Error processing audio file")
+
+
 def load_aws_credentials():
     """
     Load AWS credentials from environment variables

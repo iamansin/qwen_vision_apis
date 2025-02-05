@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 import asyncio
 from async_engine import AsyncEngine_Audio, AsyncEngine_Image
-from utils import process_image_file, ImageAnalysisRequest, ImageAnalysisResponse, SYSTEM_PROMPT, process_audio_file
+from utils import process_image_file, ImageAnalysisRequest, ImageAnalysisResponse, SYSTEM_PROMPT, process_audio_data
 from contextlib import asynccontextmanager
 from utils import download_s3_folder
 
@@ -67,8 +67,10 @@ async def analyze_images(request: Request , images: Union[List[UploadFile], Uplo
 async def voice_prescription(request: Request, file: UploadFile = File(...)):
     """Asynchronously process audio file and return transcription."""
     try:
-        file_path = await process_audio_file(file)
-        response = await request.app.state.audio_engine.enqueue_audio_request(file_path)
+        #file_path = await process_audio_file(file)
+        audio_data, file_extension = await process_audio_data(file)
+        #response = await request.app.state.audio_engine.enqueue_audio_request(file_path)
+        response = await request.app.state.audio_engine.enqueue_audio_request(audio_data, file_extension)
         return {"transcription": response.get("response"), "request_id": response.get("request_id")}
     except HTTPException as he:
         logger.error(f"HTTP error: {he.detail}")
